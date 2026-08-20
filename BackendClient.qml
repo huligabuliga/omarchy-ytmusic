@@ -52,7 +52,7 @@ Item {
     Api.assign(payload, fields || {})
     var nextPending = ({})
     for (var existing in pending) nextPending[existing] = pending[existing]
-    nextPending[String(id)] = typeof callback === "function" ? callback : null
+    nextPending[String(payload.id)] = typeof callback === "function" ? callback : null
     pending = nextPending
     socket.write(JSON.stringify(payload) + "\n")
     socket.flush()
