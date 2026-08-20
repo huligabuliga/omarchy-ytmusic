@@ -677,10 +677,31 @@ Item {
           wrapMode: Text.WordWrap
           font.pixelSize: Style.font.body
         }
+        Text {
+          width: parent.width
+          text: root.service && root.service.browserProfilesLoading
+            ? "Finding browser profiles…"
+            : "Choose the browser profile whose YouTube Music library you want to use."
+          color: Qt.darker(root.foreground, 1.3)
+          wrapMode: Text.WordWrap
+          font.pixelSize: Style.font.bodySmall
+        }
+        Repeater {
+          model: root.service ? root.service.browserProfiles : []
+          Button {
+            required property var modelData
+            text: String(modelData.name || modelData.profile)
+              + " · " + String(modelData.browser_name || modelData.browser)
+            iconText: "󰖟"
+            foreground: root.foreground
+            enabled: !!root.service && !(root.service && root.service.loginBusy)
+            onClicked: root.service.importBrowserAuth(modelData.browser, modelData.profile)
+          }
+        }
         Row {
           spacing: Style.space(8)
           Button {
-            text: root.service && root.service.loginBusy ? "Working…" : "Use Chromium session"
+            text: root.service && root.service.loginBusy ? "Working…" : "Choose automatically"
             iconText: "󰍂"
             selected: true
             foreground: root.foreground
@@ -694,6 +715,7 @@ Item {
             onClicked: Quickshell.execDetached(["xdg-open", "https://music.youtube.com"])
           }
         }
+        Component.onCompleted: if (root.service) root.service.listBrowserProfiles()
         Button {
           text: root.showHeaderPaste ? "Hide header paste" : "Paste headers instead"
           foreground: root.foreground

@@ -93,7 +93,9 @@ session already in Chromium:
 
 1. Sign in at [music.youtube.com](https://music.youtube.com) in Chromium if you
    have not already.
-2. Click the bar icon → **Set up and continue** → **Use Chromium session**.
+2. Click the bar icon → **Set up and continue**, then choose the Chromium
+   profile whose YouTube Music library you want to use. **Choose automatically**
+   remains available when there is only one relevant profile.
 
 Home shelves and search work without signing in. If you already use
 `~/.config/ytmusicbar/browser.json`, first setup copies it. Pasting request

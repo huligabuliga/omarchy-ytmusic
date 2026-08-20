@@ -204,8 +204,13 @@ class Backend:
             return self.state()
         if command == "setup_auth":
             return self.setup_auth(str(message.get("headers_raw") or ""))
+        if command == "list_browser_profiles":
+            return {"items": auth.browser_profiles()}
         if command == "import_browser":
-            return self.import_browser()
+            return self.import_browser(
+                str(message.get("browser") or ""),
+                str(message.get("profile") or ""),
+            )
         if command == "logout":
             return self.logout()
         if command == "set_idle_minutes":
@@ -311,9 +316,11 @@ class Backend:
             raise AuthError(redact(str(exc))) from exc
         return self._activate_auth(path)
 
-    def import_browser(self) -> dict[str, Any]:
+    def import_browser(self, browser: str = "", profile: str = "") -> dict[str, Any]:
         try:
-            path = auth.import_from_browser(auth.default_auth_path())
+            path = auth.import_from_browser(
+                auth.default_auth_path(), browser=browser, profile=profile
+            )
         except auth.BrowserAuthError as exc:
             raise AuthError(str(exc)) from exc
         except Exception as exc:

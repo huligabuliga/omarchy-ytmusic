@@ -52,6 +52,8 @@ Item {
   readonly property bool sessionPending: !daemonManager.requirementsChecked
   readonly property bool fullyConnected: daemonManager.playbackReady && backendClient.ready
   property bool authBusy: false
+  property bool browserProfilesLoading: false
+  property var browserProfiles: []
   readonly property bool loginBusy: daemonManager.setupBusy || daemonManager.busy
     || authBusy || !daemonManager.requirementsChecked
     || (uiVisible && daemonManager.playbackReady && !backendClient.ready)
@@ -368,10 +370,33 @@ Item {
       })
   }
 
-  function importBrowserAuth() {
+  function listBrowserProfiles() {
+    browserProfilesLoading = true
+    ensureBackend(function(ready) {
+      if (!ready || !backendClient.ready) {
+        browserProfilesLoading = false
+        browserProfiles = []
+        return
+      }
+      backendClient.sendCommand("list_browser_profiles", {}, function(ok, result, error) {
+        browserProfilesLoading = false
+        if (!ok) {
+          browserProfiles = []
+          root.fail(error)
+          return
+        }
+        browserProfiles = result && Array.isArray(result.items) ? result.items : []
+      })
+    })
+  }
+
+  function importBrowserAuth(browser, profile) {
     lastError = ""
     authBusy = true
-    command("import_browser", {},
+    command("import_browser", {
+        browser: String(browser || ""),
+        profile: String(profile || "")
+      },
       "Connected to YouTube Music", function(ok) {
         authBusy = false
         if (ok) root.refreshLibrary()

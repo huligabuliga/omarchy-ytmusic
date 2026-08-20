@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import sqlite3
@@ -43,6 +44,7 @@ class CookieDatabase:
     browser: str
     profile: str
     path: Path
+    display_name: str = ""
 
 
 def config_dir() -> Path:
@@ -231,6 +233,7 @@ def iter_cookie_databases(
                         browser=label,
                         profile=profile.name,
                         path=path,
+                        display_name=_profile_display_name(root, profile.name),
                     ))
                     break
     return found
@@ -239,10 +242,13 @@ def iter_cookie_databases(
 def import_from_browser(
     dest: Path | None = None,
     *,
+    browser: str = "",
+    profile: str = "",
     databases: list[CookieDatabase] | None = None,
     password_for: dict[str, bytes] | None = None,
 ) -> Path:
     pairs, _source = extract_youtube_cookies(
+        browser=browser, profile=profile,
         databases=databases, password_for=password_for
     )
     names = {name for name, _ in pairs}
@@ -257,11 +263,19 @@ def import_from_browser(
 
 def extract_youtube_cookies(
     *,
+    browser: str = "",
+    profile: str = "",
     databases: list[CookieDatabase] | None = None,
     password_for: dict[str, bytes] | None = None,
 ) -> tuple[list[tuple[str, str]], CookieDatabase]:
     candidates = databases if databases is not None else iter_cookie_databases()
+    if browser:
+        candidates = [item for item in candidates if item.keyring == browser]
+    if profile:
+        candidates = [item for item in candidates if item.profile == profile]
     if not candidates:
+        if browser or profile:
+            raise BrowserAuthError("The selected browser profile was not found.")
         raise BrowserAuthError(
             "No Chromium cookie database was found on this computer."
         )
@@ -464,6 +478,31 @@ def _profile_dirs(root: Path) -> list[Path]:
     extras.sort(key=lambda item: item.name)
     profiles.extend(extras)
     return profiles
+
+
+def browser_profiles(
+    databases: list[CookieDatabase] | None = None,
+) -> list[dict[str, str]]:
+    """Return profiles with cookie databases without reading their cookies."""
+    return [
+        {
+            "browser": item.keyring,
+            "browser_name": item.browser,
+            "profile": item.profile,
+            "name": item.display_name or item.profile,
+        }
+        for item in (databases if databases is not None else iter_cookie_databases())
+    ]
+
+
+def _profile_display_name(root: Path, profile: str) -> str:
+    try:
+        data = json.loads((root / "Local State").read_text(encoding="utf-8"))
+        value = data.get("profile", {}).get("info_cache", {}).get(profile, {})
+        name = value.get("name", "") if isinstance(value, dict) else ""
+        return str(name or profile)
+    except (OSError, ValueError, TypeError):
+        return profile
 
 
 def _browser_rank(keyring: str) -> int:

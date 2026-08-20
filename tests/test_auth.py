@@ -15,6 +15,7 @@ from auth import (  # noqa: E402
     BrowserAuthError,
     CookieDatabase,
     aes_cbc_decrypt,
+    browser_profiles,
     derive_os_crypt_key,
     decrypt_chrome_value,
     extract_youtube_cookies,
@@ -137,6 +138,40 @@ class AuthTests(unittest.TestCase):
     def test_extract_requires_cookie_database(self):
         with self.assertRaises(BrowserAuthError):
             extract_youtube_cookies(databases=[])
+
+    def test_extract_selects_requested_profile(self):
+        password = b"unit-test-key"
+        key = derive_os_crypt_key(password)
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "Cookies"
+            connection = sqlite3.connect(str(db_path))
+            connection.execute(
+                "CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB)"
+            )
+            connection.execute(
+                "INSERT INTO cookies VALUES (?, ?, ?, ?)",
+                (".youtube.com", "__Secure-3PAPISID", "", _v11_cookie("token", key)),
+            )
+            connection.commit()
+            connection.close()
+            candidates = [
+                CookieDatabase("chromium", "Chromium", "Default", db_path, "Work"),
+                CookieDatabase("chromium", "Chromium", "Profile 1", db_path, "Private"),
+            ]
+
+            _pairs, source = extract_youtube_cookies(
+                browser="chromium",
+                profile="Profile 1",
+                databases=candidates,
+                password_for={"chromium": password},
+            )
+
+            self.assertEqual(source.profile, "Profile 1")
+            self.assertEqual(browser_profiles(candidates)[1]["name"], "Private")
+
+    def test_extract_rejects_unknown_selected_profile(self):
+        with self.assertRaisesRegex(BrowserAuthError, "selected browser profile"):
+            extract_youtube_cookies(profile="Missing", databases=[])
 
 
 if __name__ == "__main__":

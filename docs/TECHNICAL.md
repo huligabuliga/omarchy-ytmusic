@@ -55,7 +55,8 @@ Successful responses keep that id. Failures set `ok` to false with a stable
 error code. The server pushes `state_changed` on connection and whenever
 playback state changes.
 
-Commands include `hello`, `setup_auth`, `import_browser`, `logout`, `play`, `pause`, `toggle`,
+Commands include `hello`, `setup_auth`, `list_browser_profiles`, `import_browser`, `logout`,
+`play`, `pause`, `toggle`,
 `next`, `previous`, `seek`, `set_volume`, `set_shuffle`, `set_repeat`, `load`,
 `add_to_queue`, `search`, `browse`, `get_playlist`, `get_album`, `get_artist`,
 `like`, `create_playlist`, `add_to_playlist`, and `sleep`.
