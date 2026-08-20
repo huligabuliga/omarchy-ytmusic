@@ -60,6 +60,15 @@ TestCase {
     verify(text.indexOf("supersecret") < 0)
   }
 
+  function test_mediaRowShouldCompact_dependsOnWidthNotTitleLength() {
+    // Same row width, different title lengths: both must agree, or one list
+    // renders half with buttons and half with an overflow menu.
+    verify(Api.mediaRowShouldCompact(103, 180, 5))
+    verify(!Api.mediaRowShouldCompact(413, 180, 5))
+    // Nothing to collapse means nothing to decide.
+    verify(!Api.mediaRowShouldCompact(0, 180, 0))
+  }
+
   function test_isPlayerState_acceptsOnlyStatePayloads() {
     verify(Api.isPlayerState({ lifecycle: "ready", position_ms: 206000 }))
     verify(!Api.isPlayerState({ items: [], name: "My Supermix" }))

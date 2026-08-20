@@ -160,11 +160,17 @@ function playbackSliderFeedbackComplete(sourceValue, pendingValue, sourcePending
     && difference <= Math.max(0, Number(tolerance) || 0)
 }
 
-function mediaRowShouldCompact(titleWidth, availableWidth, actionCount) {
-  var title = Math.max(0, Number(titleWidth) || 0)
-  var available = Math.max(0, Number(availableWidth) || 0)
+// A row keeps its actions inline only while what is left for the text stays
+// readable. Deciding from the title alone let a row with a short title keep its
+// buttons while its artist line was crushed to "Nether... - Odys...", and made
+// one list render ragged: some rows with buttons, some with an overflow menu,
+// purely by title length. Width is the honest input, and it is the same for
+// every row in a list, so a narrow panel now collapses all of them together.
+function mediaRowShouldCompact(availableTextWidth, minimumTextWidth, actionCount) {
+  var available = Math.max(0, Number(availableTextWidth) || 0)
+  var minimum = Math.max(0, Number(minimumTextWidth) || 0)
   var actions = Math.max(0, Math.floor(Number(actionCount) || 0))
-  return actions > 0 && title > available
+  return actions > 0 && available < minimum
 }
 
 function lyricsSong(trackId, title, artist, album, duration, coverUrl,

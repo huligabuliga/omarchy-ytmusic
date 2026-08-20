@@ -47,8 +47,10 @@ BorderSurface {
   readonly property real titleWidthWithFullActions: Math.max(0,
     contentRow.width - artworkSurface.width - fullActionWidth
       - contentRow.spacing * 2)
+  // Enough room for a song title and an artist line to both stay meaningful.
+  readonly property real minimumTextWidth: Style.space(180)
   readonly property bool compactActions: Api.mediaRowShouldCompact(
-    titleMetrics.advanceWidth, titleWidthWithFullActions, fullActionCount)
+    titleWidthWithFullActions, minimumTextWidth, fullActionCount)
 
   signal activated(var item)
   signal openRequested(var item)
@@ -95,14 +97,6 @@ BorderSurface {
   clip: true
 
   HoverHandler { id: hoverHandler }
-
-  TextMetrics {
-    id: titleMetrics
-    text: root.itemData ? String(root.itemData.name || "Untitled") : "Untitled"
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.body
-    font.bold: root.selected
-  }
 
   MouseArea {
     id: rowMouseArea
