@@ -68,6 +68,12 @@ def idle_should_exit(*, idle_minutes: int, playing: bool, client_count: int,
 # second account, leaving the library and likes looking empty.
 AUTHUSER_SLOTS = ("0", "1", "2", "3")
 
+# Resolving a stream costs a few seconds and the answer stays good for hours,
+# so opening a list warms the tracks most likely to be picked from it. Kept
+# small because each one is a yt-dlp process; widen it only if clicks further
+# down a list turn out to be common.
+PREFETCH_ON_OPEN = 3
+
 
 def pick_authuser(counts: dict[str, int]) -> str:
     """Slot with the most liked songs. Ties and empty probes keep slot 0."""
@@ -327,9 +333,8 @@ class Backend:
         opening a playlist is nearly always followed by playing its first track,
         so start that work while the user is still reading the page.
         """
-        tracks = detail.get("tracks") or []
-        if tracks:
-            video_id = str(tracks[0].get("videoId") or "")
+        for track in (detail.get("tracks") or [])[:PREFETCH_ON_OPEN]:
+            video_id = str(track.get("videoId") or "")
             if video_id:
                 self.player.resolver.prefetch(video_id)
         return detail
