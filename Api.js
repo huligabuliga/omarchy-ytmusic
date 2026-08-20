@@ -321,3 +321,10 @@ function videoIdOf(item) {
 function artistSubtitleSuffix() {
   return ""
 }
+
+// Only player commands answer with a full state payload; browse results must not
+// be mistaken for one or the now-playing bar resets while navigating. lifecycle
+// is present in every state payload and in no browse result.
+function isPlayerState(value) {
+  return !!value && typeof value === "object" && typeof value.lifecycle === "string"
+}

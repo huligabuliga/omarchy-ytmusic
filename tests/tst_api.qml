@@ -59,4 +59,11 @@ TestCase {
     var text = Api.redact("cookie: SID=supersecret")
     verify(text.indexOf("supersecret") < 0)
   }
+
+  function test_isPlayerState_acceptsOnlyStatePayloads() {
+    verify(Api.isPlayerState({ lifecycle: "ready", position_ms: 206000 }))
+    verify(!Api.isPlayerState({ items: [], name: "My Supermix" }))
+    verify(!Api.isPlayerState(null))
+    verify(!Api.isPlayerState("ready"))
+  }
 }

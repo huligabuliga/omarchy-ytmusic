@@ -257,6 +257,9 @@ Item {
 
   function applyBackendState(state) {
     if (!state || typeof state !== "object") return
+    // Browsing a playlist used to be applied here too, blanking the now-playing
+    // bar back to 0:00 until the next broadcast put it right.
+    if (!Api.isPlayerState(state)) return
     backendState = state
     interpolatedPosition = Math.max(0, Number(state.position_ms) || 0) / 1000
     positionStamp = Date.now()
