@@ -56,6 +56,137 @@ Item {
   readonly property bool sessionPending: service && service.sessionPending
   readonly property bool compactHeight: window.height < Style.space(620)
   readonly property bool compactWidth: window.width < Style.space(760)
+  // Below this there is no room for a sidebar beside the content, and an
+  // icon-only rail is a column of unlabelled glyphs rather than navigation.
+  // Move to a phone shape instead: tabs along the bottom, content full width.
+  readonly property bool mobileLayout: compactWidth
+
+  // Shared by the wide and narrow player layouts so they cannot drift apart.
+  component NowPlaying: Row {
+    property real artSize: Style.space(68)
+    spacing: Style.space(9)
+
+    BorderSurface {
+      width: parent.artSize
+      height: width
+      anchors.verticalCenter: parent.verticalCenter
+      radius: Style.cornerRadius
+      Image {
+        anchors.fill: parent
+        anchors.margins: Style.space(2)
+        source: root.service ? root.service.artUrl : ""
+        fillMode: Image.PreserveAspectFit
+        asynchronous: true
+        visible: status === Image.Ready
+      }
+    }
+    Column {
+      width: Math.max(Style.space(40), parent.width - parent.artSize - parent.spacing)
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(3)
+      Row {
+        width: parent.width
+        spacing: Style.space(3)
+        Text {
+          width: Math.max(Style.space(20), parent.width - nowPlayingLike.width - parent.spacing)
+          text: root.service && root.service.title ? root.service.title : "Nothing playing"
+          color: root.foreground
+          font.bold: true
+          elide: Text.ElideRight
+          font.pixelSize: Style.font.body
+        }
+        Button {
+          id: nowPlayingLike
+          visible: root.service && !!root.service.currentTrackItem
+          iconText: root.service && root.service.currentTrackSaved ? "󰋑" : "󰋕"
+          selected: root.service && root.service.currentTrackSaved
+          foreground: root.foreground
+          onClicked: if (root.service) root.service.toggleCurrentTrackSaved()
+        }
+      }
+      Text {
+        width: parent.width
+        text: root.service ? root.service.artist : ""
+        color: Qt.darker(root.foreground, 1.38)
+        font.pixelSize: Style.font.caption
+        elide: Text.ElideRight
+      }
+    }
+  }
+
+  component TransportControls: Row {
+    spacing: Style.space(3)
+    Button {
+      iconText: "󰒟"
+      selected: root.service && root.service.shuffle
+      foreground: root.foreground
+      onClicked: if (root.service) root.service.setShuffle(!root.service.shuffle)
+    }
+    Button {
+      iconText: "󰒮"
+      foreground: root.foreground
+      onClicked: if (root.service) root.service.previous()
+    }
+    Button {
+      iconText: root.service && root.service.playing ? "󰏤" : "󰐊"
+      iconSize: Style.font.iconLarge
+      foreground: root.foreground
+      onClicked: if (root.service) root.service.togglePlayback()
+    }
+    Button {
+      iconText: "󰒭"
+      foreground: root.foreground
+      onClicked: if (root.service) root.service.next()
+    }
+    Button {
+      iconText: root.service && root.service.repeatMode === "track" ? "󰑘" : "󰑖"
+      selected: root.service && root.service.repeatMode !== "off"
+      foreground: root.foreground
+      onClicked: if (root.service) root.service.cycleRepeat()
+    }
+    Button {
+      iconText: "󰎈"
+      foreground: root.foreground
+      enabled: root.service && root.service.lyricsAvailable
+      onClicked: root.openLyrics()
+    }
+    Button {
+      iconText: "󰒲"
+      foreground: root.foreground
+      selected: root.service && root.service.sleepActive
+      tooltipText: "Sleep timer"
+      onClicked: sleepPopup.open()
+    }
+  }
+
+  component SeekRow: Row {
+    spacing: Style.space(6)
+    Text {
+      text: Api.millisecondsToClock((root.service ? root.service.positionSeconds : 0) * 1000)
+      color: Qt.darker(root.foreground, 1.4)
+      font.pixelSize: Style.font.caption
+      anchors.verticalCenter: parent.verticalCenter
+    }
+    PlaybackSlider {
+      width: Math.max(Style.space(40), parent.width - Style.space(90))
+      bar: root.panelBar
+      minimum: 0
+      maximum: Math.max(1, root.service ? root.service.lengthSeconds : 1)
+      sourceValue: root.service ? root.service.positionSeconds : 0
+      sourcePending: root.service && root.service.pendingSeek !== null
+      acknowledgeTolerance: 2
+      contextKey: root.service ? root.service.currentUri : ""
+      onCommitted: function(value) {
+        if (root.service) root.service.seekSeconds(value)
+      }
+    }
+    Text {
+      text: Api.millisecondsToClock((root.service ? root.service.lengthSeconds : 0) * 1000)
+      color: Qt.darker(root.foreground, 1.4)
+      font.pixelSize: Style.font.caption
+      anchors.verticalCenter: parent.verticalCenter
+    }
+  }
   readonly property var activeSearchScope: Api.searchScope(currentTab,
     service ? service.detailItem : null,
     service ? service.selectedPlaylist : null, "recent", libraryType)
@@ -310,6 +441,16 @@ Item {
   function focusSearch() {
     unifiedSearchField.forceActiveFocus()
     unifiedSearchField.selectAll()
+  }
+
+  function mobileTabItems() {
+    return [
+      { id: "home", label: "Home", icon: "󰎆" },
+      { id: "search", label: "Search", icon: "󰍉" },
+      { id: "library", label: "Library", icon: "󰋑" },
+      { id: "playlists", label: "Playlists", icon: "󱁐" },
+      { id: "queue", label: "Queue", icon: "󰐕" }
+    ]
   }
 
   function primaryNavigationItems() {
@@ -1274,7 +1415,7 @@ Item {
 
           BorderSurface {
             id: sidebar
-            visible: root.currentTab !== "login"
+            visible: root.currentTab !== "login" && !root.mobileLayout
             width: visible
               ? (root.compactWidth ? Style.space(54)
                 : Math.min(Style.space(214), Math.max(Style.space(176), workspace.width * 0.225)))
@@ -1460,6 +1601,8 @@ Item {
               Column {
                 width: Math.max(80, parent.width
                   - (backButton.visible ? backButton.width + parent.spacing : 0)
+                  - (settingsHeaderButton.visible
+                    ? settingsHeaderButton.width + parent.spacing : 0)
                   - shortcutHelpButton.width - refreshButton.width - closeButton.width
                   - parent.spacing * 3)
                 anchors.verticalCenter: parent.verticalCenter
@@ -1478,6 +1621,15 @@ Item {
                   font.pixelSize: Style.font.caption
                   elide: Text.ElideRight
                 }
+              }
+              Button {
+                id: settingsHeaderButton
+                visible: root.mobileLayout && root.currentTab !== "login"
+                iconText: "󰒓"
+                foreground: root.foreground
+                tooltipText: "Settings"
+                selected: root.currentTab === "setup"
+                onClicked: root.chooseTab("setup")
               }
               Button {
                 id: shortcutHelpButton
@@ -1583,153 +1735,98 @@ Item {
         }
 
         BorderSurface {
+          id: mobileTabBar
+          visible: root.mobileLayout && root.currentTab !== "login"
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.bottom: parent.bottom
+          height: visible ? Style.space(58) : 0
+          radius: Style.cornerRadius
+          color: Style.normalFillFor(root.foreground, root.accent)
+          borderSpec: Border.controlSpec("normal", root.foreground, root.accent)
+
+          Row {
+            anchors.fill: parent
+            anchors.margins: Style.space(4)
+
+            Repeater {
+              model: root.mobileTabItems()
+              Item {
+                required property var modelData
+                width: mobileTabBar.width / root.mobileTabItems().length
+                  - Style.space(8) / root.mobileTabItems().length
+                height: parent.height
+                readonly property bool current: root.currentTab === modelData.id
+
+                Column {
+                  anchors.centerIn: parent
+                  spacing: Style.space(2)
+                  Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: modelData.icon
+                    color: current ? root.accent : Qt.darker(root.foreground, 1.3)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.icon
+                  }
+                  Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: modelData.label
+                    color: current ? root.accent : Qt.darker(root.foreground, 1.5)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: current
+                  }
+                }
+
+                TapHandler {
+                  onTapped: {
+                    if (modelData.id === "library") root.libraryType = "tracks"
+                    root.chooseTab(modelData.id)
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        BorderSurface {
           id: playerFooter
           visible: root.currentTab !== "login"
           anchors.left: parent.left
           anchors.right: parent.right
-          anchors.bottom: parent.bottom
-          height: visible ? Style.space(root.compactHeight ? 88 : 104) : 0
+          anchors.bottom: mobileTabBar.visible ? mobileTabBar.top : parent.bottom
+          anchors.bottomMargin: mobileTabBar.visible ? Style.space(8) : 0
+          height: visible
+            ? (root.mobileLayout ? Style.space(128)
+              : Style.space(root.compactHeight ? 88 : 104))
+            : 0
           radius: Style.cornerRadius
           color: Style.normalFillFor(root.foreground, root.accent)
           borderSpec: Border.controlSpec("normal", root.foreground, root.accent)
 
           Row {
             id: playerRow
+            visible: !root.mobileLayout
             anchors.fill: parent
             anchors.margins: Style.space(10)
             spacing: Style.space(12)
 
-            Row {
+            NowPlaying {
               width: Math.max(Style.space(170), Math.min(Style.space(240), playerRow.width * 0.29))
               height: parent.height
-              spacing: Style.space(9)
-
-              BorderSurface {
-                width: Math.min(parent.height, Style.space(68))
-                height: width
-                anchors.verticalCenter: parent.verticalCenter
-                radius: Style.cornerRadius
-                Image {
-                  anchors.fill: parent
-                  anchors.margins: Style.space(2)
-                  source: root.service ? root.service.artUrl : ""
-                  fillMode: Image.PreserveAspectFit
-                  asynchronous: true
-                  visible: status === Image.Ready
-                }
-              }
-              Column {
-                width: Math.max(40, parent.width - parent.height - parent.spacing)
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(3)
-                Row {
-                  width: parent.width
-                  spacing: Style.space(3)
-                  Text {
-                    width: Math.max(20, parent.width - likeButton.width - parent.spacing)
-                    text: root.service && root.service.title ? root.service.title : "Nothing playing"
-                    color: root.foreground
-                    font.bold: true
-                    elide: Text.ElideRight
-                    font.pixelSize: Style.font.body
-                  }
-                  Button {
-                    id: likeButton
-                    visible: root.service && !!root.service.currentTrackItem
-                    iconText: root.service && root.service.currentTrackSaved ? "󰋑" : "󰋕"
-                    selected: root.service && root.service.currentTrackSaved
-                    foreground: root.foreground
-                    onClicked: if (root.service) root.service.toggleCurrentTrackSaved()
-                  }
-                }
-                Text {
-                  width: parent.width
-                  text: root.service ? root.service.artist : ""
-                  color: Qt.darker(root.foreground, 1.38)
-                  font.pixelSize: Style.font.caption
-                  elide: Text.ElideRight
-                }
-              }
+              artSize: Math.min(parent.height, Style.space(68))
             }
 
             Column {
               width: Math.max(120, parent.width - Style.space(420))
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.space(1)
-              Row {
+
+              TransportControls {
                 anchors.horizontalCenter: parent.horizontalCenter
-                spacing: Style.space(3)
-                Button {
-                  iconText: "󰒟"
-                  selected: root.service && root.service.shuffle
-                  foreground: root.foreground
-                  onClicked: if (root.service) root.service.setShuffle(!root.service.shuffle)
-                }
-                Button {
-                  iconText: "󰒮"
-                  foreground: root.foreground
-                  onClicked: if (root.service) root.service.previous()
-                }
-                Button {
-                  iconText: root.service && root.service.playing ? "󰏤" : "󰐊"
-                  iconSize: Style.font.iconLarge
-                  foreground: root.foreground
-                  onClicked: if (root.service) root.service.togglePlayback()
-                }
-                Button {
-                  iconText: "󰒭"
-                  foreground: root.foreground
-                  onClicked: if (root.service) root.service.next()
-                }
-                Button {
-                  iconText: root.service && root.service.repeatMode === "track" ? "󰑘" : "󰑖"
-                  selected: root.service && root.service.repeatMode !== "off"
-                  foreground: root.foreground
-                  onClicked: if (root.service) root.service.cycleRepeat()
-                }
-                Button {
-                  iconText: "󰎈"
-                  foreground: root.foreground
-                  enabled: root.service && root.service.lyricsAvailable
-                  onClicked: root.openLyrics()
-                }
-                Button {
-                  iconText: "󰒲"
-                  foreground: root.foreground
-                  selected: root.service && root.service.sleepActive
-                  tooltipText: "Sleep timer"
-                  onClicked: sleepPopup.open()
-                }
               }
-              Row {
-                width: parent.width
-                spacing: Style.space(6)
-                Text {
-                  text: Api.millisecondsToClock((root.service ? root.service.positionSeconds : 0) * 1000)
-                  color: Qt.darker(root.foreground, 1.4)
-                  font.pixelSize: Style.font.caption
-                  anchors.verticalCenter: parent.verticalCenter
-                }
-                PlaybackSlider {
-                  width: parent.width - Style.space(90)
-                  bar: root.panelBar
-                  minimum: 0
-                  maximum: Math.max(1, root.service ? root.service.lengthSeconds : 1)
-                  sourceValue: root.service ? root.service.positionSeconds : 0
-                  sourcePending: root.service && root.service.pendingSeek !== null
-                  acknowledgeTolerance: 2
-                  contextKey: root.service ? root.service.currentUri : ""
-                  onCommitted: function(value) {
-                    if (root.service) root.service.seekSeconds(value)
-                  }
-                }
-                Text {
-                  text: Api.millisecondsToClock((root.service ? root.service.lengthSeconds : 0) * 1000)
-                  color: Qt.darker(root.foreground, 1.4)
-                  font.pixelSize: Style.font.caption
-                  anchors.verticalCenter: parent.verticalCenter
-                }
-              }
+
+              SeekRow { width: parent.width }
             }
 
             Row {
@@ -1754,6 +1851,29 @@ Item {
                 }
               }
             }
+          }
+
+          // Narrow panels stack instead of competing for one line: what is
+          // playing, then the controls, then the scrubber across the full
+          // width. System volume covers the slider that does not fit.
+          Column {
+            id: mobilePlayer
+            visible: root.mobileLayout
+            anchors.fill: parent
+            anchors.margins: Style.space(10)
+            spacing: Style.space(7)
+
+            NowPlaying {
+              width: parent.width
+              height: Style.space(48)
+              artSize: Style.space(48)
+            }
+
+            TransportControls {
+              anchors.horizontalCenter: parent.horizontalCenter
+            }
+
+            SeekRow { width: parent.width }
           }
         }
       }
