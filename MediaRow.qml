@@ -73,9 +73,15 @@ BorderSurface {
   onItemDataChanged: actionsExpanded = false
   onCompactActionsChanged: if (!compactActions) actionsExpanded = false
 
+  // At narrow widths the actions and a readable title cannot share one line:
+  // revealing them left the title about 44px wide, which is a single letter and
+  // an ellipsis. Give them their own line under the title instead.
+  readonly property bool stackedActions: compactActions && actionsExpanded
+
   width: parent ? parent.width : implicitWidth
   implicitWidth: Style.space(420)
-  implicitHeight: Style.space(66)
+  readonly property int rowHeight: Style.space(66)
+  implicitHeight: rowHeight + (stackedActions ? actionRow.height + Style.space(6) : 0)
   height: implicitHeight
   radius: Style.cornerRadius
   color: selected || reorderDragging
@@ -164,13 +170,16 @@ BorderSurface {
 
   Row {
     id: contentRow
-    anchors.fill: parent
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
     anchors.margins: Style.space(6)
+    height: root.rowHeight - Style.space(12)
     spacing: Style.space(9)
 
     BorderSurface {
       id: artworkSurface
-      width: parent.height
+      width: root.rowHeight - Style.space(12)
       height: width
       radius: Style.spacing.labelGap
       color: Style.normalFillFor(root.foreground, root.accent)
@@ -203,8 +212,9 @@ BorderSurface {
     }
 
     Column {
-      width: Math.max(20, parent.width - artworkSurface.width - actionRow.width
-        - parent.spacing * 2)
+      width: Math.max(Style.space(48), parent.width - artworkSurface.width
+        - parent.spacing
+        - (root.stackedActions ? 0 : actionRow.width + parent.spacing))
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.space(3)
 
@@ -233,9 +243,15 @@ BorderSurface {
       }
     }
 
-    Row {
-      id: actionRow
-      anchors.verticalCenter: parent.verticalCenter
+  }
+
+  Row {
+    id: actionRow
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(6)
+      anchors.verticalCenter: root.stackedActions ? undefined : contentRow.verticalCenter
+      anchors.top: root.stackedActions ? contentRow.bottom : undefined
+      anchors.topMargin: root.stackedActions ? Style.space(6) : 0
       spacing: Style.space(2)
 
       Text {
@@ -311,7 +327,6 @@ BorderSurface {
         onClicked: root.actionsExpanded = !root.actionsExpanded
       }
     }
-  }
 
   Rectangle {
     anchors.left: parent.left
