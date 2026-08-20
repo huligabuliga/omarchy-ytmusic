@@ -102,6 +102,18 @@ def load_headers(path: Path) -> dict:
     return data
 
 
+def set_authuser(path: Path, authuser: str) -> None:
+    """Record which signed-in Google account the stored headers act as."""
+    import json
+
+    headers = load_headers(path)
+    headers["x-goog-authuser"] = str(authuser)
+    path.write_text(
+        json.dumps(headers, indent=4, sort_keys=True, ensure_ascii=True),
+        encoding="utf-8",
+    )
+
+
 def cookie_header(headers: dict) -> str:
     for key, value in headers.items():
         if str(key).lower() == "cookie":

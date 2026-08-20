@@ -12,7 +12,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 import player  # noqa: E402
-from server import Backend, idle_should_exit  # noqa: E402
+from server import Backend, idle_should_exit, pick_authuser  # noqa: E402
 
 
 class IdleWatchTests(unittest.TestCase):
@@ -81,3 +81,25 @@ class StreamCacheWarmUpTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AuthUserSelectionTests(unittest.TestCase):
+    def test_prefers_the_account_with_the_most_liked_songs(self):
+        self.assertEqual(pick_authuser({"0": 1, "1": 311}), "1")
+
+    def test_keeps_slot_zero_unless_another_slot_beats_it(self):
+        self.assertEqual(pick_authuser({"0": 12, "1": 12}), "0")
+        self.assertEqual(pick_authuser({}), "0")
+
+    def test_set_authuser_rewrites_only_the_account_slot(self):
+        import json
+
+        import auth
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "browser.json"
+            path.write_text(json.dumps({"cookie": "SID=x", "x-goog-authuser": "0"}))
+            auth.set_authuser(path, "2")
+            headers = json.loads(path.read_text())
+        self.assertEqual(headers["x-goog-authuser"], "2")
+        self.assertEqual(headers["cookie"], "SID=x")

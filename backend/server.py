@@ -62,6 +62,24 @@ def idle_should_exit(*, idle_minutes: int, playing: bool, client_count: int,
     return (now - last_activity) >= idle_minutes * 60
 
 
+# Chromium keeps one cookie jar for every Google account signed into a profile.
+# x-goog-authuser picks which of them a request acts as, so an import that always
+# assumed slot 0 signed in as the wrong account whenever the music lived in a
+# second account, leaving the library and likes looking empty.
+AUTHUSER_SLOTS = ("0", "1", "2", "3")
+
+
+def pick_authuser(counts: dict[str, int]) -> str:
+    """Slot with the most liked songs. Ties and empty probes keep slot 0."""
+    best = "0"
+    best_count = counts.get("0", 0)
+    for slot in AUTHUSER_SLOTS:
+        count = counts.get(slot, 0)
+        if count > best_count:
+            best, best_count = slot, count
+    return best
+
+
 class Backend:
     def __init__(self, auth_path: Path | None = None):
         self.auth_path = auth.default_auth_path() if auth_path is None else auth_path
@@ -325,7 +343,23 @@ class Backend:
             raise AuthError(str(exc)) from exc
         except Exception as exc:
             raise AuthError(redact(str(exc))) from exc
+        self._select_authuser(path)
         return self._activate_auth(path)
+
+    def _select_authuser(self, path: Path) -> None:
+        from ytmusicapi import YTMusic
+
+        counts: dict[str, int] = {}
+        for slot in AUTHUSER_SLOTS:
+            auth.set_authuser(path, slot)
+            try:
+                liked = YTMusic(str(path)).get_liked_songs(limit=1)
+                counts[slot] = int(liked.get("trackCount") or 0)
+            except Exception:
+                # A slot with no account behind it answers with a shape
+                # ytmusicapi cannot parse. Treat it as empty and move on.
+                continue
+        auth.set_authuser(path, pick_authuser(counts))
 
     def _activate_auth(self, path: Path) -> dict[str, Any]:
         self.auth_path = path
