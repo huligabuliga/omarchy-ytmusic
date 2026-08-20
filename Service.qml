@@ -657,21 +657,27 @@ Item {
     openDetail(item)
   }
 
-  function openDetail(item) {
+  function openDetail(item, fresh) {
     if (!item) return
+    // Reopening the page you are already on, which is what the refresh button
+    // does, should not blank the list you are reading. Moving to a different
+    // page still clears, or it would briefly show the previous one's tracks.
+    var ident = item.id || item.playlistId
+    var current = detailItem ? (detailItem.id || detailItem.playlistId) : ""
+    if (!current || String(current) !== String(ident)) {
+      detailTracks = []
+      detailAlbums = []
+    }
     detailItem = item
-    detailTracks = []
-    detailAlbums = []
     detailLoading = true
     var commandName = item.type === "album" ? "get_album"
       : (item.type === "artist" ? "get_artist" : "get_playlist")
-    var ident = item.id || item.playlistId
     if (!ident) {
       detailLoading = false
       fail("That page is not available")
       return
     }
-    command(commandName, { id: ident }, "", function(ok, result) {
+    command(commandName, { id: ident, fresh: fresh === true }, "", function(ok, result) {
       root.detailLoading = false
       if (!ok || !result) return
       root.detailItem = result

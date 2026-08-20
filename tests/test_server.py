@@ -128,7 +128,7 @@ class ViewCacheTests(unittest.TestCase):
 
     def test_a_missing_or_corrupt_view_reads_as_absent(self):
         self.assertIsNone(server.read_cached_view("liked"))
-        (Path(self._tmp.name) / "liked.json").write_text("{not json")
+        server.cache_file("liked").write_text("{not json")
         self.assertIsNone(server.read_cached_view("liked"))
 
     def test_dropping_without_names_clears_every_account_view(self):
@@ -144,3 +144,19 @@ class ViewCacheTests(unittest.TestCase):
         server.drop_cached_views("liked")
         self.assertIsNone(server.read_cached_view("liked"))
         self.assertIsNotNone(server.read_cached_view("playlists"))
+
+    def test_detail_keys_survive_ids_that_are_not_filenames(self):
+        key = "playlist:PL../../etc/passwd"
+        server.write_cached_view(key, {"tracks": [{"videoId": "abc"}]})
+        path = server.cache_file(key)
+        self.assertEqual(path.parent, Path(self._tmp.name))
+        payload, _ = server.read_cached_view(key)
+        self.assertEqual(payload["tracks"][0]["videoId"], "abc")
+
+    def test_detail_keys_do_not_collide(self):
+        server.write_cached_view("playlist:A", {"tracks": []})
+        server.write_cached_view("album:A", {"tracks": [{"videoId": "x"}]})
+        self.assertEqual(server.read_cached_view("playlist:A")[0]["tracks"], [])
+        self.assertEqual(
+            server.read_cached_view("album:A")[0]["tracks"][0]["videoId"], "x"
+        )

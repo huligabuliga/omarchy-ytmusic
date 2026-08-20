@@ -1496,7 +1496,7 @@ Item {
                   if (!root.service) return
                   if (root.currentTab === "search") root.runSearch()
                   else if (root.currentTab === "detail" && root.service.detailItem)
-                    root.service.openDetail(root.service.detailItem)
+                    root.service.openDetail(root.service.detailItem, true)
                   else root.service.refreshView(root.currentTab)
                 }
               }

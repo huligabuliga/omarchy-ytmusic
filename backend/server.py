@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import signal
 import socket
 import sys
@@ -89,9 +91,16 @@ def view_cache_dir() -> Path:
     return path
 
 
+def cache_file(key: str) -> Path:
+    """Cache path for a key. Keys carry ids, so they cannot be filenames."""
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", key)[:48]
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+    return view_cache_dir() / f"{safe}.{digest}.json"
+
+
 def read_cached_view(view: str) -> tuple[dict[str, Any], float] | None:
     """Cached payload and its age in seconds, or None when there is none."""
-    path = view_cache_dir() / f"{view}.json"
+    path = cache_file(view)
     try:
         with path.open("r", encoding="utf-8") as handle:
             entry = json.load(handle)
@@ -104,7 +113,7 @@ def read_cached_view(view: str) -> tuple[dict[str, Any], float] | None:
 
 
 def write_cached_view(view: str, payload: dict[str, Any]) -> None:
-    path = view_cache_dir() / f"{view}.json"
+    path = cache_file(view)
     tmp = path.with_suffix(".json.tmp")
     try:
         with tmp.open("w", encoding="utf-8") as handle:
@@ -124,7 +133,7 @@ def drop_cached_views(*views: str) -> None:
     one user's library and nothing in the filename says whose.
     """
     directory = view_cache_dir()
-    targets = [directory / f"{view}.json" for view in views] if views \
+    targets = [cache_file(view) for view in views] if views \
         else list(directory.glob("*.json"))
     for path in targets:
         try:
@@ -357,12 +366,13 @@ class Backend:
                 str(message.get("view") or "home"),
                 fresh=message.get("fresh") is True,
             )
+        fresh = message.get("fresh") is True
         if command == "get_playlist":
-            return self._detail(self.require_catalog().playlist(str(message.get("id") or "")))
+            return self._cached_detail("playlist", str(message.get("id") or ""), fresh)
         if command == "get_album":
-            return self._detail(self.require_catalog().album(str(message.get("id") or "")))
+            return self._cached_detail("album", str(message.get("id") or ""), fresh)
         if command == "get_artist":
-            return self.require_catalog().artist(str(message.get("id") or ""))
+            return self._cached_detail("artist", str(message.get("id") or ""), fresh)
         if command == "get_queue":
             return {"items": list(self.player.queue), "index": self.player.index}
         if command == "like":
@@ -376,7 +386,10 @@ class Backend:
                 str(message.get("playlist_id") or ""),
                 str(message.get("video_id") or ""),
             )
-            drop_cached_views("playlists")
+            drop_cached_views(
+                "playlists",
+                f"playlist:{str(message.get('playlist_id') or '')}",
+            )
             return {}
         if command == "sleep":
             self.player.set_sleep(
@@ -390,6 +403,24 @@ class Backend:
         if not command:
             raise ValueError("missing command")
         raise ValueError(f"Unknown command: {command}")
+
+    def _cached_detail(self, kind: str, item_id: str, fresh: bool) -> dict[str, Any]:
+        """A playlist page is a track list that changes rarely and reads slowly.
+
+        Serve the last copy so the songs are on screen immediately, then bring
+        it up to date behind the page the user is already reading.
+        """
+        key = f"{kind}:{item_id}"
+        if not fresh:
+            cached = read_cached_view(key)
+            if cached is not None:
+                payload, age = cached
+                if age > VIEW_CACHE_TTL:
+                    self._revalidate_view(key)
+                return self._detail(payload)
+        payload = self._browse_live(key)
+        write_cached_view(key, payload)
+        return self._detail(payload)
 
     def _detail(self, detail: dict[str, Any]) -> dict[str, Any]:
         """Warm the stream URL for the track most likely to be played next.
@@ -497,6 +528,16 @@ class Backend:
 
     def _browse_live(self, view: str) -> dict[str, Any]:
         cat = self.require_catalog()
+        if ":" in view:
+            kind, _, item_id = view.partition(":")
+            with self._catalog_lock:
+                if kind == "playlist":
+                    return cat.playlist(item_id)
+                if kind == "album":
+                    return cat.album(item_id)
+                if kind == "artist":
+                    return cat.artist(item_id)
+            raise ValueError(f"Unknown view: {view}")
         with self._catalog_lock:
             if view == "home":
                 return {"home": cat.home(), "signed_in": self.signed_in}
