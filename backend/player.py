@@ -47,7 +47,7 @@ def resolve_timeout(warm: bool) -> int:
 
 def quality_format(kbps: int) -> str:
     rate = 96 if kbps <= 96 else (160 if kbps <= 160 else 320)
-    return f"bestaudio[abr<={rate}]/bestaudio"
+    return f"bestaudio[abr<={rate}]/bestaudio/best"
 
 
 def media_title(item: dict | None) -> str:
@@ -332,6 +332,7 @@ class StreamResolver:
         url = watch_url(video_id)
         command = [
             binary,
+            "--extractor-args", "youtube:player_client=android",
             "-f", quality_format(self.kbps),
             "-g",
             "--no-playlist",
