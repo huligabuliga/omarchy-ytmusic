@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import signal
 import socket
@@ -74,6 +75,63 @@ AUTHUSER_SLOTS = ("0", "1", "2", "3")
 # down a list turn out to be common.
 PREFETCH_ON_OPEN = 3
 
+# Every sidebar view was a fresh network round trip, so opening the panel spent
+# about four seconds redrawing a library that rarely changes. Views are cached
+# on disk and served immediately; anything older than this is refreshed in the
+# background so the next open is current. The backend also exits when idle, so
+# the cache has to outlive the process to be worth anything.
+VIEW_CACHE_TTL = 600
+
+
+def view_cache_dir() -> Path:
+    path = auth.cache_dir() / "browse"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def read_cached_view(view: str) -> tuple[dict[str, Any], float] | None:
+    """Cached payload and its age in seconds, or None when there is none."""
+    path = view_cache_dir() / f"{view}.json"
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            entry = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    payload = entry.get("data")
+    if not isinstance(payload, dict):
+        return None
+    return payload, max(0.0, time.time() - float(entry.get("at") or 0))
+
+
+def write_cached_view(view: str, payload: dict[str, Any]) -> None:
+    path = view_cache_dir() / f"{view}.json"
+    tmp = path.with_suffix(".json.tmp")
+    try:
+        with tmp.open("w", encoding="utf-8") as handle:
+            json.dump({"at": time.time(), "data": payload}, handle)
+        tmp.replace(path)
+    except (OSError, TypeError, ValueError):
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def drop_cached_views(*views: str) -> None:
+    """Forget named views, or every view when called with no names.
+
+    Signing out or switching account has to clear everything: the cache holds
+    one user's library and nothing in the filename says whose.
+    """
+    directory = view_cache_dir()
+    targets = [directory / f"{view}.json" for view in views] if views \
+        else list(directory.glob("*.json"))
+    for path in targets:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
 
 def pick_authuser(counts: dict[str, int]) -> str:
     """Slot with the most liked songs. Ties and empty probes keep slot 0."""
@@ -100,6 +158,8 @@ class Backend:
         self._clients: list[socket.socket] = []
         self._clients_lock = threading.Lock()
         self._catalog_lock = threading.Lock()
+        self._revalidating: set[str] = set()
+        self._revalidating_lock = threading.Lock()
         self._stop = threading.Event()
         self.player = QueuePlayer(
             runtime_dir(),
@@ -293,7 +353,10 @@ class Backend:
                 int(message.get("limit") or 24),
             )
         if command == "browse":
-            return self.browse(str(message.get("view") or "home"))
+            return self.browse(
+                str(message.get("view") or "home"),
+                fresh=message.get("fresh") is True,
+            )
         if command == "get_playlist":
             return self._detail(self.require_catalog().playlist(str(message.get("id") or "")))
         if command == "get_album":
@@ -306,12 +369,14 @@ class Backend:
             return self.like(str(message.get("video_id") or ""), bool(message.get("liked")))
         if command == "create_playlist":
             item = self.require_catalog().create_playlist(str(message.get("name") or ""))
+            drop_cached_views("playlists")
             return {"playlist": item}
         if command == "add_to_playlist":
             self.require_catalog().add_to_playlist(
                 str(message.get("playlist_id") or ""),
                 str(message.get("video_id") or ""),
             )
+            drop_cached_views("playlists")
             return {}
         if command == "sleep":
             self.player.set_sleep(
@@ -381,6 +446,7 @@ class Backend:
         auth.set_authuser(path, pick_authuser(counts))
 
     def _activate_auth(self, path: Path) -> dict[str, Any]:
+        drop_cached_views()
         self.auth_path = path
         self.start_catalog()
         if not self.signed_in:
@@ -394,11 +460,42 @@ class Backend:
         except Exception:
             pass
         auth.clear_auth(self.auth_path)
+        drop_cached_views()
         self.start_catalog()
         self.broadcast()
         return self.state()
 
-    def browse(self, view: str) -> dict[str, Any]:
+    def browse(self, view: str, fresh: bool = False) -> dict[str, Any]:
+        if not fresh:
+            cached = read_cached_view(view)
+            if cached is not None:
+                payload, age = cached
+                if age > VIEW_CACHE_TTL:
+                    self._revalidate_view(view)
+                return payload
+        payload = self._browse_live(view)
+        write_cached_view(view, payload)
+        return payload
+
+    def _revalidate_view(self, view: str) -> None:
+        with self._revalidating_lock:
+            if view in self._revalidating:
+                return
+            self._revalidating.add(view)
+
+        def worker() -> None:
+            try:
+                write_cached_view(view, self._browse_live(view))
+            except Exception:
+                # A failed refresh just leaves the last good copy in place.
+                pass
+            finally:
+                with self._revalidating_lock:
+                    self._revalidating.discard(view)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _browse_live(self, view: str) -> dict[str, Any]:
         cat = self.require_catalog()
         with self._catalog_lock:
             if view == "home":
@@ -430,6 +527,7 @@ class Backend:
         if not video_id:
             raise ValueError("video_id is required")
         self.require_catalog().rate_song(video_id, liked)
+        drop_cached_views("liked", "library_songs")
         current = self.player.current
         if current and current.get("videoId") == video_id:
             current["liked"] = liked

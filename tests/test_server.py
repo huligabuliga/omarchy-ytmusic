@@ -12,7 +12,12 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 import player  # noqa: E402
-from server import Backend, idle_should_exit, pick_authuser  # noqa: E402
+from server import (  # noqa: E402
+    Backend,
+    idle_should_exit,
+    pick_authuser,
+)
+import server  # noqa: E402
 
 
 class IdleWatchTests(unittest.TestCase):
@@ -103,3 +108,39 @@ class AuthUserSelectionTests(unittest.TestCase):
             headers = json.loads(path.read_text())
         self.assertEqual(headers["x-goog-authuser"], "2")
         self.assertEqual(headers["cookie"], "SID=x")
+
+
+class ViewCacheTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        patcher = mock.patch.object(
+            server, "view_cache_dir", return_value=Path(self._tmp.name)
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_a_written_view_reads_back_fresh(self):
+        server.write_cached_view("liked", {"items": [{"videoId": "abc"}]})
+        payload, age = server.read_cached_view("liked")
+        self.assertEqual(payload["items"][0]["videoId"], "abc")
+        self.assertLess(age, server.VIEW_CACHE_TTL)
+
+    def test_a_missing_or_corrupt_view_reads_as_absent(self):
+        self.assertIsNone(server.read_cached_view("liked"))
+        (Path(self._tmp.name) / "liked.json").write_text("{not json")
+        self.assertIsNone(server.read_cached_view("liked"))
+
+    def test_dropping_without_names_clears_every_account_view(self):
+        server.write_cached_view("liked", {"items": []})
+        server.write_cached_view("playlists", {"items": []})
+        server.drop_cached_views()
+        self.assertIsNone(server.read_cached_view("liked"))
+        self.assertIsNone(server.read_cached_view("playlists"))
+
+    def test_dropping_by_name_leaves_the_others(self):
+        server.write_cached_view("liked", {"items": []})
+        server.write_cached_view("playlists", {"items": []})
+        server.drop_cached_views("liked")
+        self.assertIsNone(server.read_cached_view("liked"))
+        self.assertIsNotNone(server.read_cached_view("playlists"))

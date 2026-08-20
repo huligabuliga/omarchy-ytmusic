@@ -575,43 +575,44 @@ Item {
 
   function cancelSearch() {}
 
-  function openView(view, force) {
-    if (view === "home") loadHome(force)
-    else if (view === "library") loadLibrary(libraryType, false, force)
-    else if (view === "playlists") loadPlaylists()
+  function openView(view, force, fresh) {
+    if (view === "home") loadHome(force, fresh)
+    else if (view === "library") loadLibrary(libraryType, false, force, fresh)
+    else if (view === "playlists") loadPlaylists(fresh)
     else if (view === "search" && searchQuery) search(searchQuery)
     else if (view === "queue") {}
   }
 
   function refreshView(view) {
-    openView(view, true)
+    openView(view, true, true)
   }
 
-  function loadHome(force) {
+  function loadHome(force, fresh) {
     if (homeLoading && !force) return
+    var reload = fresh === true
     homeLoading = true
-    command("browse", { view: "home" }, "", function(ok, result) {
+    command("browse", { view: "home", fresh: reload }, "", function(ok, result) {
       root.homeLoading = false
       if (!ok || !result) return
       root.homeShelves = result.home || []
     })
-    command("browse", { view: "history" }, "", function(ok, result) {
+    command("browse", { view: "history", fresh: reload }, "", function(ok, result) {
       if (ok && result) root.history = result.items || []
     })
     if (accountConnected) {
-      command("browse", { view: "liked" }, "", function(ok, result) {
+      command("browse", { view: "liked", fresh: reload }, "", function(ok, result) {
         if (ok && result) root.liked = result.items || []
       })
-      loadPlaylists()
+      loadPlaylists(reload)
     }
   }
 
-  function loadLibrary(kind, more, force) {
+  function loadLibrary(kind, more, force, fresh) {
     libraryType = kind || libraryType
     libraryLoading = true
     var view = libraryType === "albums" ? "library_albums"
       : (libraryType === "artists" ? "library_artists" : "library_songs")
-    command("browse", { view: view }, "", function(ok, result) {
+    command("browse", { view: view, fresh: fresh === true }, "", function(ok, result) {
       root.libraryLoading = false
       if (!ok || !result) return
       if (root.libraryType === "albums") root.libraryAlbums = result.items || []
@@ -626,9 +627,9 @@ Item {
     return librarySongs
   }
 
-  function loadPlaylists() {
+  function loadPlaylists(fresh) {
     playlistsLoading = true
-    command("browse", { view: "playlists" }, "", function(ok, result) {
+    command("browse", { view: "playlists", fresh: fresh === true }, "", function(ok, result) {
       root.playlistsLoading = false
       if (ok && result) root.playlists = result.items || []
     })
@@ -646,9 +647,9 @@ Item {
   }
 
   function refreshLibrary() {
-    loadHome(true)
-    loadPlaylists()
-    loadLibrary(libraryType, false, true)
+    loadHome(true, true)
+    loadPlaylists(true)
+    loadLibrary(libraryType, false, true, true)
   }
 
   function openPlaylist(item) {
