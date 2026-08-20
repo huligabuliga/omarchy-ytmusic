@@ -20,6 +20,31 @@ class PlayerError(RuntimeError):
     pass
 
 
+# yt-dlp has to fetch and solve YouTube's player JS challenge the first time it
+# sees a new player build, which is far slower than a normal resolve. Failing
+# that inside the warm budget is what makes the very first play after an install
+# report "Playback failed", so a cold cache gets a much larger budget.
+RESOLVE_TIMEOUT_WARM = 40
+RESOLVE_TIMEOUT_COLD = 150
+YT_DLP_SIGFUNC_CACHE = (
+    Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    / "yt-dlp" / "youtube-sigfuncs"
+)
+
+
+def yt_dlp_cache_warm(path: Path | None = None) -> bool:
+    """True when yt-dlp has already solved a player JS challenge."""
+    target = Path(path) if path is not None else YT_DLP_SIGFUNC_CACHE
+    try:
+        return target.is_dir() and any(target.iterdir())
+    except OSError:
+        return False
+
+
+def resolve_timeout(warm: bool) -> int:
+    return RESOLVE_TIMEOUT_WARM if warm else RESOLVE_TIMEOUT_COLD
+
+
 def quality_format(kbps: int) -> str:
     rate = 96 if kbps <= 96 else (160 if kbps <= 160 else 320)
     return f"bestaudio[abr<={rate}]/bestaudio"
@@ -316,13 +341,24 @@ class StreamResolver:
         ]
         if self.cookies_path and self.cookies_path.is_file():
             command[1:1] = ["--cookies", str(self.cookies_path)]
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=40,
-            check=False,
-        )
+        warm = yt_dlp_cache_warm()
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=resolve_timeout(warm),
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            if warm:
+                raise PlayerError(
+                    "YouTube took too long to answer. Try that track again."
+                ) from exc
+            raise PlayerError(
+                "Preparing YouTube playback took too long the first time. "
+                "Try that track again; the next one is much faster."
+            ) from exc
         stream = (result.stdout or "").strip().splitlines()
         if result.returncode != 0 or not stream:
             detail = (result.stderr or "").strip().splitlines()
@@ -361,6 +397,7 @@ class QueuePlayer:
         self._sleep_deadline = 0.0
         self._sleep_after = ""
         self._display_title = ""
+        self.resolving = False
         self.last_activity = time.time()
 
     @property
@@ -550,6 +587,10 @@ class QueuePlayer:
         self.error = ""
         self.ensure_started()
         self._publish_title(item)
+        # A cold resolve can take a while. Tell the UI before blocking on it so
+        # it can show progress instead of looking stalled.
+        self.resolving = True
+        self.on_change()
         try:
             url = self.resolver.resolve(video_id)
             self._publish_title(item)
@@ -561,8 +602,11 @@ class QueuePlayer:
         except Exception as exc:
             self.error = str(exc)
             self.playing = False
+            self.resolving = False
             self.on_change()
             raise PlayerError(str(exc)) from exc
+        finally:
+            self.resolving = False
         nxt = self._upcoming_video_id()
         if nxt:
             self.resolver.prefetch(nxt)

@@ -1496,7 +1496,8 @@ Item {
               anchors.topMargin: visible ? Style.space(6) : 0
               implicitHeight: visible ? messageText.implicitHeight + Style.space(12) : 0
               height: implicitHeight
-              visible: root.service && (root.service.lastError !== "" || root.service.statusMessage !== "")
+              visible: root.service && (root.service.lastError !== ""
+                || root.service.resolving || root.service.statusMessage !== "")
               color: root.service && root.service.lastError !== ""
                 ? Style.selectedFillFor(root.foreground, Color.urgent)
                 : Style.normalFillFor(root.foreground, root.accent)
@@ -1505,7 +1506,9 @@ Item {
                 id: messageText
                 anchors.fill: parent
                 anchors.margins: Style.space(6)
-                text: !root.service ? "" : (root.service.lastError || root.service.statusMessage)
+                text: !root.service ? "" : (root.service.lastError
+                  || (root.service.resolving ? "Preparing playback…" : "")
+                  || root.service.statusMessage)
                 color: root.foreground
                 wrapMode: Text.WordWrap
                 font.pixelSize: Style.font.bodySmall

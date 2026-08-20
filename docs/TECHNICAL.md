@@ -30,6 +30,19 @@ and installed backend live outside the plugin tree:
 - `$HOME/.local/lib/omarchy-ytmusic/`
 - `$HOME/.config/omarchy-ytmusic/browser.json`
 
+## Stream resolution
+
+Playback URLs come from `yt-dlp -g`. The first resolve against a new YouTube
+player build has to fetch and solve a JS challenge, which is far slower than a
+warm resolve, so the budget depends on whether
+`~/.cache/yt-dlp/youtube-sigfuncs/` is populated: 40s warm, 150s cold. The
+backend also warms that challenge in the background at startup, picking a
+`videoId` out of history, liked songs, or home shelves rather than hardcoding a
+video that could later be taken down or region-blocked.
+
+While a resolve is in flight the state carries `resolving: true`, which the
+panel shows as "Preparing playback…".
+
 ## Protocol
 
 Requests:

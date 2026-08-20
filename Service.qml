@@ -70,6 +70,9 @@ Item {
   readonly property bool hasPlayer: backendClient.ready || daemonManager.running
   readonly property bool hasMedia: !!currentTrackItem
   readonly property bool playing: backendState && backendState.playing === true
+  // True while the backend waits on yt-dlp. The first resolve against a new
+  // YouTube player build is slow, so the UI says so instead of looking stuck.
+  readonly property bool resolving: backendState && backendState.resolving === true
   readonly property string title: currentTrackItem ? String(currentTrackItem.name || "") : ""
   readonly property string artist: currentTrackItem ? String(currentTrackItem.subtitle || "") : ""
   readonly property string album: currentTrackItem ? String(currentTrackItem.album || "") : ""
@@ -256,6 +259,8 @@ Item {
     interpolatedPosition = Math.max(0, Number(state.position_ms) || 0) / 1000
     positionStamp = Date.now()
     if (state.error) lastError = Api.redact(String(state.error))
+    // A new resolve is under way, so a previous failure is no longer current.
+    else if (state.resolving === true) lastError = ""
     pendingSeek = null
   }
 

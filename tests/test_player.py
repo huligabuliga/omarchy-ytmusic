@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,6 +17,8 @@ from player import (  # noqa: E402
     mpv_command_line,
     mpv_env,
     quality_format,
+    resolve_timeout,
+    yt_dlp_cache_warm,
 )
 
 
@@ -81,6 +84,21 @@ class PlayerTests(unittest.TestCase):
         self.assertNotIn("WAYLAND_DISPLAY", env)
         self.assertNotIn("DISPLAY", env)
         self.assertEqual(env["XDG_RUNTIME_DIR"], "/run/user/1000")
+
+    def test_cold_cache_gets_a_bigger_resolve_budget(self):
+        # A cold player-JS solve is what made the first play after an install
+        # report "Playback failed", so it must not share the warm budget.
+        self.assertGreater(resolve_timeout(False), resolve_timeout(True))
+        self.assertEqual(resolve_timeout(True), 40)
+
+    def test_yt_dlp_cache_warm_detects_a_solved_challenge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "youtube-sigfuncs"
+            self.assertFalse(yt_dlp_cache_warm(cache))     # missing
+            cache.mkdir()
+            self.assertFalse(yt_dlp_cache_warm(cache))     # present but empty
+            (cache / "abc-main-1.json").write_text("{}", encoding="utf-8")
+            self.assertTrue(yt_dlp_cache_warm(cache))
 
 
 if __name__ == "__main__":

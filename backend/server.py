@@ -126,6 +126,7 @@ class Backend:
             "signed_in": self.signed_in,
             "account_name": self.account_name,
             "playing": self.player.playing,
+            "resolving": self.player.resolving,
             "shuffle": self.player.shuffle,
             "repeat": self.player.repeat,
             "volume": self.player.volume,
@@ -471,6 +472,56 @@ class Backend:
     def _start_catalog_locked(self) -> None:
         self.start_catalog()
         self.broadcast()
+        self._warm_stream_cache()
+
+    def _catalog_video_id(self) -> str:
+        """Any real videoId from the catalog.
+
+        Used so warming yt-dlp needs no hardcoded video that could later be
+        taken down or blocked in the user's region.
+        """
+        if not self.catalog:
+            return ""
+        for view in ("history", "liked", "home"):
+            try:
+                with self._catalog_lock:
+                    if view == "home":
+                        items = [track for shelf in self.catalog.home() or []
+                                 for track in (shelf.get("tracks") or [])]
+                    else:
+                        items = getattr(self.catalog, view)()
+            except Exception:
+                continue
+            for item in items or []:
+                video_id = str((item or {}).get("videoId") or "")
+                if video_id:
+                    return video_id
+        return ""
+
+    def _warm_stream_cache(self) -> None:
+        """Solve YouTube's player JS challenge before the user presses play.
+
+        The first resolve against a new player build is slow enough to look
+        like a failure. Doing it in the background at startup means the first
+        deliberate play is already fast.
+        """
+        from player import yt_dlp_cache_warm
+
+        if yt_dlp_cache_warm():
+            return
+
+        def worker() -> None:
+            video_id = self._catalog_video_id()
+            if not video_id or self._stop.is_set():
+                return
+            print("omarchy-ytmusic-backend warming yt-dlp player cache",
+                  file=sys.stderr)
+            try:
+                self.player.resolver.resolve(video_id)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _client_loop(self, client: socket.socket) -> None:
         client.settimeout(1.0)

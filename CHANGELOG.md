@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Fix the first play after an install reporting "Playback failed". yt-dlp has to
+  fetch and solve YouTube's player JS challenge the first time it sees a new
+  player build, which does not fit the 40s resolve budget. A cold cache now gets
+  150s, and the backend warms the challenge in the background at startup using a
+  video from the user's own catalog.
+- Report a resolve timeout in plain language instead of a raw Python traceback.
+- Show "Preparing playback…" while the backend waits on yt-dlp, so a slow
+  resolve no longer looks like a stalled player.
+
 ## 1.1.1
 
 - Keep the playback socket alive while the player is open, and reconnect when it drops.
