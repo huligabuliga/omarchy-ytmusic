@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1
+
+- Keep the playback socket alive while the player is open, and reconnect when it drops.
+- Open the backend socket before catalog setup so the player can connect immediately.
+- Do not idle-stop playback while a player window is connected.
+- Restart a stopped backend instead of leaving Home empty.
+
 ## 1.1.0
 
 - Recreate the backend socket after a dropped connection so the player can recover.

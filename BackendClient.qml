@@ -92,14 +92,18 @@ Item {
     }
   }
 
-  onWantedChanged: {
-    if (wanted) return
+  function tearDownSocket() {
     reconnectTimer.stop()
     socketLoader.active = false
     lifecycle = ""
     sessionConnected = false
     lastState = null
     reconnectAttempt = 0
+  }
+
+  onWantedChanged: {
+    if (wanted) return
+    tearDownSocket()
     resetPending("YouTube Music stopped")
   }
 
@@ -108,15 +112,21 @@ Item {
   Component {
     id: socketComponent
     Socket {
+      id: socket
       path: root.socketPath
-      connected: true
+      connected: false
       parser: SplitParser {
         splitMarker: "\n"
         onRead: function(line) { root.handleLine(line) }
       }
+      Component.onCompleted: connected = true
       onConnectionStateChanged: {
         if (connected) root.sendCommand("hello", null, null)
         else root.lifecycle = ""
+      }
+      onError: function() {
+        connected = false
+        root.lifecycle = ""
       }
     }
   }
@@ -128,7 +138,8 @@ Item {
   }
 
   // A failed connect leaves Quickshell's Socket holding a dead QLocalSocket.
-  // Setting connected=true again is a no-op, so each retry creates a new Socket.
+  // Toggling Loader.active in the same tick is also a no-op, so drop the
+  // socket on one tick and open a new one on the next.
   Timer {
     id: reconnectTimer
     interval: Math.min(1500, 180 + root.reconnectAttempt * 120)
@@ -136,8 +147,11 @@ Item {
     triggeredOnStart: true
     running: root.wanted && !root.connected
     onTriggered: {
-      root.reconnectAttempt = Math.min(12, root.reconnectAttempt + 1)
-      socketLoader.active = false
+      root.reconnectAttempt = Math.min(24, root.reconnectAttempt + 1)
+      if (socketLoader.active) {
+        socketLoader.active = false
+        return
+      }
       socketLoader.active = true
     }
   }

@@ -2,14 +2,31 @@
 set -euo pipefail
 
 action=${1:-}
-if (( $# != 1 )); then
-  echo "Usage: scripts/playback-runtime.sh check|start|stop|status|unit" >&2
+source_root=${2:-}
+if [[ -z $action || ( $# -gt 2 ) ]]; then
+  echo "Usage: scripts/playback-runtime.sh check|start|stop|status|unit [plugin-dir]" >&2
   exit 2
 fi
 
 venv_python="$HOME/.local/share/omarchy-ytmusic/venv/bin/python"
-backend_script="$HOME/.local/lib/omarchy-ytmusic/server.py"
+lib_dir="$HOME/.local/lib/omarchy-ytmusic"
+backend_script="$lib_dir/server.py"
 unit=omarchy-ytmusic.service
+
+sync_backend() {
+  [[ -n $source_root && -f $source_root/backend/server.py && -d $lib_dir ]] || return 1
+  local updated=1
+  local name
+  for name in server.py protocol.py auth.py catalog.py player.py; do
+    if [[ ! -f $lib_dir/$name ]] \
+        || ! cmp -s -- "$source_root/backend/$name" "$lib_dir/$name"; then
+      install -m 644 -- "$source_root/backend/$name" "$lib_dir/$name"
+      updated=0
+    fi
+  done
+  chmod 755 -- "$lib_dir/server.py"
+  return "$updated"
+}
 
 unit_exists() {
   systemctl --user cat "$1" >/dev/null 2>&1
@@ -25,11 +42,17 @@ case $action in
     runtime_ready
     ;;
   start)
+    updated=1
+    sync_backend && updated=0 || true
     runtime_ready || {
       echo "playback-runtime.sh: YouTube Music playback is not installed yet" >&2
       exit 1
     }
-    systemctl --user start "$unit"
+    if (( updated == 0 )) && systemctl --user is-active --quiet "$unit"; then
+      systemctl --user restart "$unit"
+    else
+      systemctl --user start "$unit"
+    fi
     ;;
   stop)
     systemctl --user stop "$unit" 2>/dev/null || true

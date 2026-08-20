@@ -817,7 +817,10 @@ Item {
         visible: (!root.service || ((root.service.homeShelves || []).length === 0
           && (root.service.history || []).length === 0))
         text: root.service && root.service.homeLoading
-          ? "Loading home…" : "Nothing on Home yet. Search for a song to start."
+          ? "Loading home…"
+          : (root.service && !root.service.fullyConnected
+            ? (root.service.loginProgress || "Connecting")
+            : "Nothing on Home yet. Search for a song to start.")
         color: Qt.darker(root.foreground, 1.4)
         horizontalAlignment: Text.AlignHCenter
       }

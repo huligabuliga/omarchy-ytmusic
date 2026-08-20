@@ -77,7 +77,7 @@ Item {
   }
 
   function start() {
-    if (busy || serviceActive) return
+    if (busy || !pluginDir) return
     if (!binaryAvailable || !unitAvailable) {
       lastError = "Playback support needs to be set up"
       return
@@ -85,7 +85,7 @@ Item {
     lastError = ""
     busy = true
     startCommand.command = ["/usr/bin/bash",
-      pluginDir + "/scripts/playback-runtime.sh", "start"]
+      pluginDir + "/scripts/playback-runtime.sh", "start", pluginDir]
     startCommand.running = true
   }
 

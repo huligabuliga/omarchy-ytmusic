@@ -271,6 +271,14 @@ Item {
       if (typeof waiters[i] === "function") waiters[i](ok === true)
   }
 
+  function markDisconnected() {
+    homeLoading = false
+    searchLoading = false
+    libraryLoading = false
+    playlistsLoading = false
+    detailLoading = false
+  }
+
   function ensureBackend(callback) {
     function ready(ok) {
       if (typeof callback === "function") callback(ok === true)
@@ -321,9 +329,9 @@ Item {
     if (value) next[name] = true
     visibleSurfaces = next
     if (value) {
+      backendClient.wanted = true
       ensureBackend()
-      if (idleShutdownMinutes === 0 && daemonManager.playbackReady)
-        daemonManager.start()
+      if (daemonManager.playbackReady) daemonManager.start()
     }
   }
 
@@ -729,9 +737,17 @@ Item {
     id: backendClient
     wanted: daemonManager.running || root.uiVisible
     onStateReceived: function(state) { root.applyBackendState(state) }
+    onConnectedChanged: {
+      if (connected) return
+      root.markDisconnected()
+      if (root.uiVisible) daemonManager.start()
+    }
     onReadyChanged: {
       if (ready) {
         root.flushReadyWaiters(true)
+        if (root.lastError === "YouTube Music is not ready"
+            || root.lastError === "Installing playback on this computer…")
+          root.succeed("")
         sendCommand("set_idle_minutes", { minutes: root.idleShutdownMinutes })
         sendCommand("set_quality", { kbps: root.bitrateKbps })
         if (root.uiVisible) root.loadHome(true)
@@ -751,17 +767,24 @@ Item {
 
   Timer {
     id: readyWaitTimer
-    interval: 120
+    interval: 200
     repeat: true
     onTriggered: {
       root.readyWaitTicks++
       if (backendClient.ready) {
         root.flushReadyWaiters(true)
-      } else if (root.readyWaitTicks >= 40) {
+      } else if (root.readyWaitTicks >= 150) {
         root.fail("YouTube Music is not ready")
         root.flushReadyWaiters(false)
       }
     }
+  }
+
+  Timer {
+    interval: 2000
+    running: root.uiVisible && !backendClient.ready && daemonManager.playbackReady
+    repeat: true
+    onTriggered: daemonManager.start()
   }
 
   Timer {

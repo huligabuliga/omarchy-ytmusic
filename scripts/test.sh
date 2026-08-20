@@ -16,6 +16,7 @@ python3 "$source_root/tests/test_catalog.py"
 python3 "$source_root/tests/test_auth.py"
 python3 "$source_root/tests/test_player.py"
 python3 "$source_root/tests/test_protocol.py"
+python3 "$source_root/tests/test_server.py"
 
 if command -v qmllint >/dev/null 2>&1; then
   qmllint -I /usr/share/omarchy/shell Api.js \

@@ -55,6 +55,13 @@ def socket_path() -> Path:
     return runtime_dir() / "backend.sock"
 
 
+def idle_should_exit(*, idle_minutes: int, playing: bool, client_count: int,
+                     last_activity: float, now: float) -> bool:
+    if idle_minutes <= 0 or playing or client_count > 0:
+        return False
+    return (now - last_activity) >= idle_minutes * 60
+
+
 class Backend:
     def __init__(self, auth_path: Path | None = None):
         self.auth_path = auth.default_auth_path() if auth_path is None else auth_path
@@ -191,6 +198,7 @@ class Backend:
                             message=redact(str(exc)))
 
     def dispatch(self, command: str, message: dict[str, Any]) -> dict[str, Any]:
+        self.player.note_activity()
         if command in ("hello", "ping", "get_state"):
             return self.state()
         if command == "setup_auth":
@@ -430,12 +438,13 @@ class Backend:
         os.chmod(path, 0o600)
         server.listen(8)
         server.settimeout(0.5)
-        self.lifecycle = "ready" if self.lifecycle != "error" else self.lifecycle
         print(f"omarchy-ytmusic-backend listening on {path}", file=sys.stderr)
         idle_thread = threading.Thread(target=self._idle_watch, daemon=True)
         idle_thread.start()
         position_thread = threading.Thread(target=self._position_watch, daemon=True)
         position_thread.start()
+        catalog_thread = threading.Thread(target=self._start_catalog_locked, daemon=True)
+        catalog_thread.start()
         try:
             while not self._stop.is_set():
                 try:
@@ -459,8 +468,13 @@ class Backend:
                 except OSError:
                     pass
 
+    def _start_catalog_locked(self) -> None:
+        self.start_catalog()
+        self.broadcast()
+
     def _client_loop(self, client: socket.socket) -> None:
         client.settimeout(1.0)
+        self.player.note_activity()
         with self._clients_lock:
             self._clients.append(client)
         try:
@@ -503,12 +517,15 @@ class Backend:
     def _idle_watch(self) -> None:
         while not self._stop.is_set():
             time.sleep(15)
-            if self.idle_minutes <= 0:
-                continue
-            if self.player.playing:
-                continue
-            idle_for = time.time() - self.player.last_activity
-            if idle_for >= self.idle_minutes * 60:
+            with self._clients_lock:
+                clients = len(self._clients)
+            if idle_should_exit(
+                idle_minutes=self.idle_minutes,
+                playing=self.player.playing,
+                client_count=clients,
+                last_activity=self.player.last_activity,
+                now=time.time(),
+            ):
                 print("omarchy-ytmusic-backend idle shutdown", file=sys.stderr)
                 self._stop.set()
                 return
@@ -548,7 +565,6 @@ def main(argv: list[str] | None = None) -> int:
 
     auth_path = Path(os.path.expanduser(args.auth)) if args.auth else None
     backend = Backend(auth_path)
-    backend.start_catalog()
 
     def handle_stop(signum, frame):
         backend._stop.set()
