@@ -289,9 +289,9 @@ class Backend:
         if command == "browse":
             return self.browse(str(message.get("view") or "home"))
         if command == "get_playlist":
-            return self.require_catalog().playlist(str(message.get("id") or ""))
+            return self._detail(self.require_catalog().playlist(str(message.get("id") or "")))
         if command == "get_album":
-            return self.require_catalog().album(str(message.get("id") or ""))
+            return self._detail(self.require_catalog().album(str(message.get("id") or "")))
         if command == "get_artist":
             return self.require_catalog().artist(str(message.get("id") or ""))
         if command == "get_queue":
@@ -319,6 +319,20 @@ class Backend:
         if not command:
             raise ValueError("missing command")
         raise ValueError(f"Unknown command: {command}")
+
+    def _detail(self, detail: dict[str, Any]) -> dict[str, Any]:
+        """Warm the stream URL for the track most likely to be played next.
+
+        Resolving against an authenticated session costs a few seconds, and
+        opening a playlist is nearly always followed by playing its first track,
+        so start that work while the user is still reading the page.
+        """
+        tracks = detail.get("tracks") or []
+        if tracks:
+            video_id = str(tracks[0].get("videoId") or "")
+            if video_id:
+                self.player.resolver.prefetch(video_id)
+        return detail
 
     def require_catalog(self) -> Catalog:
         if not self.catalog:
@@ -420,7 +434,6 @@ class Backend:
     def load(self, message: dict[str, Any]) -> dict[str, Any]:
         items = message.get("items")
         index = int(message.get("index") or message.get("offset_index") or 0)
-        radio = message.get("radio") is True
         video_id = str(message.get("video_id") or "")
         playlist_id = str(message.get("playlist_id") or "")
         album_id = str(message.get("album_id") or "")
@@ -450,13 +463,10 @@ class Backend:
                 "videoId": video_id,
                 "externalUrl": f"https://music.youtube.com/watch?v={video_id}",
             }
-            if radio or True:
-                related = self._radio_tracks(video_id)
-                resolved = related or [seed]
-                if resolved and resolved[0].get("videoId") != video_id:
-                    resolved = [seed] + [item for item in resolved if item.get("videoId") != video_id]
-            else:
-                resolved = [seed]
+            # Start with just the clicked track. _play_current tops the queue up
+            # through _fill_radio on a background thread, so the first note no
+            # longer waits on a full get_watch_playlist round trip.
+            resolved = [seed]
             index = 0
 
         if not resolved:
